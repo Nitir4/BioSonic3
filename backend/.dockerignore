@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+.env.*
+!.env.example
+*.joblib
+.git/
+.gitignore
+*.md
+tests/
+test.py
+# Don't ignore data/ — it needs to be available for training
+# If data is too large, remove the line below and use a pre-trained .pkl instead
+# data/
+# .pkl files ARE included (class_names.pkl is small and needed)
+# .pth files (model weights) are NOT excluded — they are needed in the image

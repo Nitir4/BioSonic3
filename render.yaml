@@ -1,0 +1,28 @@
+# render.yaml — Render.com Blueprint
+# Docs: https://render.com/docs/blueprint-spec
+#
+# How to use:
+#   1. Push this repo to GitHub
+#   2. Go to https://dashboard.render.com/new/blueprint
+#   3. Connect your repo — Render will auto-detect this file
+
+services:
+  - type: web
+    name: biosonic-backend
+    runtime: docker
+    dockerfilePath: backend/Dockerfile
+    # Build context is the backend folder so relative paths work correctly
+    dockerContext: backend
+    region: oregon
+    plan: free          # upgrade to "starter" for always-on (no spin-down)
+    healthCheckPath: /health
+    envVars:
+      # Set this to your Vercel URL after deploying the frontend
+      # e.g. https://biosonic.vercel.app
+      - key: ALLOWED_ORIGINS
+        value: "*"      # ← replace with your actual Vercel URL before going live
+      # If you have a pre-trained model file, set the path here
+      - key: MODEL_CACHE_PATH
+        value: model_cache.pkl
+      - key: DATASET_PATH
+        value: data/train_audio
