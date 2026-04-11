@@ -5,17 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from main import run_pipeline
 from model.predictor import load_model
-
-# ── Allowed frontend origins ───────────────────────────────────────────────────
-# Set ALLOWED_ORIGINS env var on Render to your Vercel URL, e.g.:
-#   https://biosonic.vercel.app
-# Comma-separate multiple values if needed.
-_raw_origins = os.environ.get("ALLOWED_ORIGINS", "*")
-ALLOWED_ORIGINS = [o.strip() for o in _raw_origins.split(",")]
-
 
 # ── Lifespan: load model once at startup ──────────────────────────────────────
 @asynccontextmanager
@@ -23,62 +16,70 @@ async def lifespan(app: FastAPI):
     load_model()
     yield
 
-
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="BioSonic API",
-    description="Wildlife audio classification backend",
-    version="1.0.0",
     lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── API Routes (Must come BEFORE static/catch-all) ─────────────────────────────
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
 @app.post("/predict")
 async def predict_audio(file: UploadFile = File(...)):
-    """
-    Accept any audio file supported by librosa (.ogg, .wav, .mp3, .flac …)
-    and return:
-      species   – predicted wildlife species
-      confidence – model confidence [0, 1]
-      rai       – Relative Abundance Index (detections / minute)
-      zones     – { A: int, B: int, C: int } occurrence counts per zone
-      movement  – human-readable movement pattern string
-    """
-    # Preserve the original extension so librosa can pick the right decoder
     suffix = os.path.splitext(file.filename or "audio")[1] or ".ogg"
-
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         content = await file.read()
         tmp.write(content)
         temp_path = tmp.name
-
     try:
         result = run_pipeline(temp_path)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Audio processing failed: {exc}")
+        raise HTTPException(status_code=422, detail=str(exc))
     finally:
         os.unlink(temp_path)
-
     return result
 
-# ── Static Files (Frontend) ───────────────────────────────────────────────────
-# Mount the static directory for the frontend. 
-# This must be LAST so it doesn't override /health or /predict
-if os.path.exists("static"):
-    app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# ── Frontend Logic ────────────────────────────────────────────────────────────
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# 1. Serve individual files in the root static folder (favicon, icons, etc.)
+# But do NOT mount it to '/' as it intercepts routes. 
+# We'll handle them via a specific check or use a subpath.
+
+@app.get("/")
+async def serve_index():
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend build not found. Please ensure 'npm run build' was successful."}
+
+# Serve the /assets/ folder for JS/CSS
+assets_path = os.path.join(STATIC_DIR, "assets")
+if os.path.exists(assets_path):
+    app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
+
+# Catch-all for React router and other root-level static files
+@app.get("/{full_path:path}")
+async def catch_all(full_path: str):
+    # Check if the file exists in static folder (e.g. /favicon.svg)
+    file_path = os.path.join(STATIC_DIR, full_path)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # Otherwise, return index.html for React routing
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    raise HTTPException(status_code=404, detail="Not Found")
