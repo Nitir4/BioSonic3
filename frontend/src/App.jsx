@@ -8,16 +8,8 @@ import PredictionCard from "./components/PredictionCard";
 const speciesList = ["Tiger", "Elephant", "Deer", "Hornbill", "Leopard"];
 const rareSpecies = ["Tiger", "Leopard"];
 
-const routePool = [
-  ["A", "B", "C"],
-  ["A", "C", "B"],
-  ["B", "A", "C"],
-  ["C", "B", "A"],
-];
-
-const incidentPool = ["", "", "Gunshot pattern flagged", "Chainsaw audio signature"];
-
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const DEFAULT_PATH = ["A", "B", "C"];
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -29,7 +21,7 @@ function App() {
     { name: "Zone B", value: 11 },
     { name: "Zone C", value: 5 },
   ]);
-  const [movementPath, setMovementPath] = useState(["A", "B", "C"]);
+  const [movementPath, setMovementPath] = useState(DEFAULT_PATH);
   const [systemAlert, setSystemAlert] = useState("");
 
   // ── Simulation fallback (used when no backend or backend errors) ────────────
@@ -48,6 +40,7 @@ function App() {
       confidence,
       rai,
       rare: rareSpecies.includes(species),
+      simulated: true,
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -55,25 +48,27 @@ function App() {
     });
     setRaiHistory((prev) => [...prev.slice(-7), rai]);
     setZoneActivity(zones);
-    setMovementPath(routePool[randomInt(0, routePool.length - 1)]);
-    setSystemAlert(incidentPool[randomInt(0, incidentPool.length - 1)]);
+    setMovementPath(DEFAULT_PATH);
+    setSystemAlert("");
   };
 
   // ── Real backend result handler ───────────────────────────────────────────
   // Backend response shape:
-  //   { species, confidence, rai, zones: {A, B, C}, movement }
+  //   { species, confidence, detected, rai, zones: {A, B, C}, movement }
   const handleRealResult = (fileName, data) => {
     if (fileName) setLastFileName(fileName);
 
     const confidencePct = Math.round((data.confidence ?? 0) * 100);
     const species = data.species ?? "Unknown";
     const rai = data.rai ?? 0;
+    const hasDetection = Boolean(data.detected);
 
     setPrediction({
-      species,
+      species: hasDetection ? species : "No detection",
       confidence: confidencePct,
       rai,
-      rare: rareSpecies.includes(species),
+      rare: false,
+      simulated: false,
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -97,9 +92,9 @@ function App() {
       .split("→")
       .map((s) => s.trim())
       .filter(Boolean);
-    setMovementPath(parsedPath.length ? parsedPath : ["A", "B", "C"]);
+    setMovementPath(parsedPath.length ? parsedPath : DEFAULT_PATH);
 
-    setSystemAlert(incidentPool[randomInt(0, incidentPool.length - 1)]);
+    setSystemAlert(data.alert ?? "");
   };
 
   useEffect(() => {
@@ -107,7 +102,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!prediction) {
+    if (!prediction?.simulated) {
       return undefined;
     }
 

@@ -6,6 +6,37 @@ from model.predictor import predict, load_model
 from config import CHUNK_DURATION, CONF_THRESHOLD
 
 
+def summarize_results(results):
+    """Collapse chunk-level predictions into one file-level summary."""
+    if not results:
+        return {
+            "species": "No detection",
+            "confidence": 0.0,
+            "detected": False,
+            "rai": 0,
+            "zones": {"A": 0, "B": 0, "C": 0},
+            "movement": "None",
+        }
+
+    detected_results = [r for r in results if r["detected"]]
+    ranked_results = detected_results if detected_results else results
+    top_result = max(ranked_results, key=lambda r: r["confidence"])
+
+    rai = calculate_rai(results, CHUNK_DURATION)
+    zone_results = assign_zones(results)
+    counts = zone_counts(zone_results)
+    movement = movement_pattern(counts) or "None"
+
+    return {
+        "species": top_result["species"],
+        "confidence": round(top_result["confidence"], 4),
+        "detected": bool(detected_results),
+        "rai": round(rai, 2),
+        "zones": counts,
+        "movement": movement,
+    }
+
+
 def run_pipeline(audio_path):
     # Load audio
     y, sr = load_audio(audio_path)
@@ -28,29 +59,7 @@ def run_pipeline(audio_path):
             "detected": detected
         })
 
-    # Edge case: no chunks (very short audio)
-    if len(results) == 0:
-        return {
-            "species": "No detection",
-            "rai": 0,
-            "zones": {"A": 0, "B": 0, "C": 0},
-            "movement": "None"
-        }
-
-    # Calculate RAI
-    rai = calculate_rai(results, CHUNK_DURATION)
-
-    # Zone + movement logic
-    zone_results = assign_zones(results)
-    counts = zone_counts(zone_results)
-    movement = movement_pattern(counts)
-
-    return {
-        "species": results[0]["species"],
-        "rai": round(rai, 2),
-        "zones": counts,
-        "movement": movement
-    }
+    return summarize_results(results)
 
 
 if __name__ == "__main__":
@@ -76,4 +85,3 @@ if __name__ == "__main__":
     # run pipeline
     output = run_pipeline(sample_path)
     print(output)
-

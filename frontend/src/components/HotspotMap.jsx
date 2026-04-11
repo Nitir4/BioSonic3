@@ -17,7 +17,12 @@ function HotspotMap({ isDarkMode, movementPath, zoneActivity }) {
     <section className={`flex h-full flex-col rounded-[1.75rem] border p-6 shadow-xl ${panelClass}`}>
       <p className={`text-xs uppercase tracking-[0.25em] ${isDarkMode ? "text-emerald-200/55" : "text-emerald-900/70"}`}>Zones</p>
       <div className="mt-3 flex items-end justify-between gap-3">
-        <h2 className={`text-2xl font-semibold ${isDarkMode ? "text-white" : "text-emerald-950"}`}>Zone Activity</h2>
+        <div>
+          <h2 className={`text-2xl font-semibold ${isDarkMode ? "text-white" : "text-emerald-950"}`}>Zone Activity</h2>
+          <p className={`mt-1 text-sm ${isDarkMode ? "text-emerald-50/60" : "text-emerald-950/65"}`}>
+            Relative detection buckets, not a GPS-backed map.
+          </p>
+        </div>
         <div className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${isDarkMode ? "border-emerald-400/20 bg-emerald-300/10 text-emerald-100" : "border-emerald-400 bg-emerald-50 text-emerald-900"}`}>
           Route {movementPath.join(" → ")}
         </div>
