@@ -1,0 +1,19 @@
+# Ignore local node_modules and build outputs
+node_modules/
+frontend/node_modules/
+frontend/dist/
+backend/static/
+
+# Ignore python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Ignore local env files
+.env
+.env.*
+
+# Ignore git
+.git/
+.gitignore
+.venv/

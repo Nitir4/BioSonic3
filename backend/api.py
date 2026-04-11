@@ -13,8 +13,11 @@ from model.predictor import load_model
 # ── Lifespan: load model once at startup ──────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Log startup for debugging
+    print("INFO: Starting BioSonic API...")
     load_model()
     yield
+    print("INFO: Shutting down BioSonic API...")
 
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -22,6 +25,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Extremely permissive CORS for initial deployment troubleshooting
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,6 +36,7 @@ app.add_middleware(
 
 # ── API Routes (Must come BEFORE static/catch-all) ─────────────────────────────
 @app.get("/health")
+@app.head("/health")
 def health():
     return {"status": "ok"}
 
@@ -45,24 +50,32 @@ async def predict_audio(file: UploadFile = File(...)):
     try:
         result = run_pipeline(temp_path)
     except Exception as exc:
+        print(f"ERROR: Prediction failed: {exc}")
         raise HTTPException(status_code=422, detail=str(exc))
     finally:
         os.unlink(temp_path)
     return result
 
 # ── Frontend Logic ────────────────────────────────────────────────────────────
-STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-# 1. Serve individual files in the root static folder (favicon, icons, etc.)
-# But do NOT mount it to '/' as it intercepts routes. 
-# We'll handle them via a specific check or use a subpath.
+# Serve favicon.ico specifically to avoid 404s in logs
+@app.get("/favicon.ico")
+async def favicon():
+    fav_path = os.path.join(STATIC_DIR, "favicon.svg") # Vite often uses svg
+    if os.path.exists(fav_path):
+        return FileResponse(fav_path)
+    return HTTPException(status_code=404)
 
+# Support HEAD / for Render health checks
 @app.get("/")
+@app.head("/")
 async def serve_index():
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
-    return {"error": "Frontend build not found. Please ensure 'npm run build' was successful."}
+    return {"error": "Frontend build not found.", "path": index_path}
 
 # Serve the /assets/ folder for JS/CSS
 assets_path = os.path.join(STATIC_DIR, "assets")
@@ -72,12 +85,10 @@ if os.path.exists(assets_path):
 # Catch-all for React router and other root-level static files
 @app.get("/{full_path:path}")
 async def catch_all(full_path: str):
-    # Check if the file exists in static folder (e.g. /favicon.svg)
     file_path = os.path.join(STATIC_DIR, full_path)
     if os.path.isfile(file_path):
         return FileResponse(file_path)
     
-    # Otherwise, return index.html for React routing
     index_path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)

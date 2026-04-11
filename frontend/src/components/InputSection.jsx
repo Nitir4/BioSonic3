@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-// Backend URL — set VITE_API_URL in your Vercel environment variables
+// Backend URL — defaults to empty string for same-origin relative calls
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 function InputSection({ isDarkMode, onResult, onSimulate }) {
@@ -24,19 +24,13 @@ function InputSection({ isDarkMode, onResult, onSimulate }) {
 
     setFileName(file.name);
     setError("");
-
-    // If no backend URL configured, fall back to simulation
-    if (!API_URL) {
-      onSimulate(file.name);
-      return;
-    }
-
     setLoading(true);
 
     try {
       const formData = new FormData();
       formData.append("file", file);
 
+      // Call the backend (relative to current origin if API_URL is empty)
       const res = await fetch(`${API_URL}/predict`, {
         method: "POST",
         body: formData,
@@ -50,12 +44,12 @@ function InputSection({ isDarkMode, onResult, onSimulate }) {
       const data = await res.json();
       onResult(file.name, data);
     } catch (err) {
+      console.error("Backend Error:", err);
       setError(err.message);
-      // Fall back to simulation so the UI stays usable
+      // Fall back to simulation only ON ERROR so the UI stays usable
       onSimulate(file.name);
     } finally {
       setLoading(false);
-      // Reset input so the same file can be re-uploaded
       if (inputRef.current) inputRef.current.value = "";
     }
   };
@@ -68,13 +62,11 @@ function InputSection({ isDarkMode, onResult, onSimulate }) {
           Upload audio for analysis
         </h2>
         <p className={`mt-2 text-sm ${subtextClass}`}>
-          {API_URL
-            ? "Triggers live prediction, RAI, and zone refresh."
-            : "Running in simulation mode — set VITE_API_URL to connect to the backend."}
+          Triggers live prediction, RAI, and zone refresh.
         </p>
         {error && (
           <p className="mt-2 text-xs text-amber-400">
-            ⚠ Backend error: {error} — showing simulated data.
+            ⚠ Connection error: {error} — showing simulated data.
           </p>
         )}
       </div>

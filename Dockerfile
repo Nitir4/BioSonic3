@@ -1,50 +1,46 @@
-# syntax=docker/dockerfile:1.7
-
-FROM node:20-alpine AS frontend-builder
+# ── Stage 1: Build React Frontend ─────────────────────────────────────────────
+FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
 
-COPY frontend/package.json frontend/package-lock.json ./
+# Copy dependencies first for caching
+COPY frontend/package*.json ./
 RUN npm ci
 
+# Copy frontend source and build
 COPY frontend/ ./
-
-ARG VITE_API_URL=http://localhost:8080
-ENV VITE_API_URL=${VITE_API_URL}
-
+ENV NODE_OPTIONS="--max-old-space-size=450"
 RUN npm run build
 
-
-FROM nginx:1.27-alpine AS frontend-runtime
-COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
-
-EXPOSE 3000
-
-CMD ["nginx", "-g", "daemon off;"]
-
-
-FROM python:3.11-slim-bookworm AS backend-runtime
+# ── Stage 2: Final Unified Image (Python + Static Frontend) ──────────────────
+FROM python:3.11-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
-WORKDIR /app/backend
+WORKDIR /app
 
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources
-
+# System dependencies for audio and image processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
     ffmpeg \
     libgl1 \
     libglib2.0-0 \
-    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Python backend dependencies
 COPY backend/requirements.txt ./
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy backend source code
 COPY backend/ ./
 
-EXPOSE 8080
+# Copy the built frontend from Stage 1 into the backend's static directory
+# We put it in 'static' because backend/api.py is configured to serve from there
+COPY --from=frontend-builder /app/frontend/dist/ ./static/
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
+# Safety check: Verify the frontend build exists in the final image
+RUN ls -la /app/static/index.html
+
+# Run the FastAPI server which now handles both API and Frontend
+CMD uvicorn api:app --host 0.0.0.0 --port ${PORT:-8080}
