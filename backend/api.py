@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from main import run_pipeline
 from model.predictor import load_model
@@ -75,3 +76,9 @@ async def predict_audio(file: UploadFile = File(...)):
         os.unlink(temp_path)
 
     return result
+
+# ── Static Files (Frontend) ───────────────────────────────────────────────────
+# Mount the static directory for the frontend. 
+# This must be LAST so it doesn't override /health or /predict
+if os.path.exists("static"):
+    app.mount("/", StaticFiles(directory="static", html=True), name="static")

@@ -11,8 +11,8 @@ services:
     name: biosonic-backend
     runtime: docker
     dockerfilePath: backend/Dockerfile
-    # Build context is the backend folder so relative paths work correctly
-    dockerContext: backend
+    # Build context is the root folder so multi-stage build can access frontend/
+    dockerContext: .
     region: oregon
     plan: free          # upgrade to "starter" for always-on (no spin-down)
     healthCheckPath: /health
