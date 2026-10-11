@@ -1,5 +1,6 @@
 import os
 import glob
+from pathlib import Path
 import numpy as np
 import librosa
 import torch
@@ -7,9 +8,10 @@ import timm
 import joblib
 
 # ── Config ────────────────────────────────────────────────────────────────────
-WEIGHTS_DIR      = os.environ.get("WEIGHTS_DIR",      "model/weights")
-CLASS_NAMES_PATH = os.environ.get("CLASS_NAMES_PATH", "model/weights/class_names.pkl")
-ID_TO_NAME_PATH  = os.environ.get("ID_TO_NAME_PATH",  "model/weights/id_to_name.pkl")
+_DEFAULT_WEIGHTS = Path(__file__).resolve().parent / 'weights'
+WEIGHTS_DIR = os.environ.get('WEIGHTS_DIR', str(_DEFAULT_WEIGHTS))
+CLASS_NAMES_PATH = os.environ.get('CLASS_NAMES_PATH', str(Path(WEIGHTS_DIR) / 'class_names.pkl'))
+ID_TO_NAME_PATH = os.environ.get('ID_TO_NAME_PATH', str(Path(WEIGHTS_DIR) / 'id_to_name.pkl'))
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Mel-spectrogram config (must match training)
@@ -78,11 +80,9 @@ class BirdModel(torch.nn.Module):
 def _load_single_fold(weight_path: str, num_classes: int) -> BirdModel:
     net = BirdModel(num_classes=num_classes)
     sd = torch.load(weight_path, map_location=DEVICE, weights_only=True)
-    missing, unexpected = net.load_state_dict(sd, strict=False)
-    if missing:
-        print(f"  [{os.path.basename(weight_path)}] missing keys: {len(missing)}")
-    if unexpected:
-        print(f"  [{os.path.basename(weight_path)}] unexpected keys: {len(unexpected)}")
+    # A partially initialized network must never produce apparently valid
+    # classifications. Architecture/checkpoint mismatches are startup errors.
+    net.load_state_dict(sd, strict=True)
     net.to(DEVICE)
     net.eval()
     return net
@@ -92,34 +92,28 @@ def _load_single_fold(weight_path: str, num_classes: int) -> BirdModel:
 def load_model():
     global fold_models, class_names, id_to_name
 
-    # Class names (iNat taxon IDs)
+    # Clear stale state before a reload; publish an ensemble only after every
+    # fold and its class metadata load successfully.
+    fold_models, class_names, id_to_name = [], [], {}
     if not os.path.isfile(CLASS_NAMES_PATH):
-        print(f"WARNING: class names not found at '{CLASS_NAMES_PATH}'. /predict will return 503.")
-        return
-    class_names = joblib.load(CLASS_NAMES_PATH)
-    num_classes  = len(class_names)
-    print(f"Loaded {num_classes} class names.")
+        print('WARNING: Class metadata is unavailable. /predict will return 503.')
+        return False
+    names = joblib.load(CLASS_NAMES_PATH)
+    if len(names) == 0:
+        raise ValueError('The class metadata is empty.')
+    mapping = joblib.load(ID_TO_NAME_PATH) if os.path.isfile(ID_TO_NAME_PATH) else {}
+    paths = sorted(glob.glob(os.path.join(WEIGHTS_DIR, 'fold*.pth')))
+    if not paths:
+        print('WARNING: No fold checkpoints are available. /predict will return 503.')
+        return False
+    candidates = [_load_single_fold(path, len(names)) for path in paths]
+    fold_models, class_names, id_to_name = candidates, names, mapping
+    print(f'Ensemble ready: {len(fold_models)} fold(s) × {len(class_names)} classes.')
+    return True
 
-    # Human-readable name mapping (optional but recommended)
-    if os.path.isfile(ID_TO_NAME_PATH):
-        id_to_name = joblib.load(ID_TO_NAME_PATH)
-        print(f"Loaded id→name mapping ({len(id_to_name)} entries).")
-    else:
-        print(f"No id_to_name.pkl found — will return raw taxon IDs.")
 
-    # Find fold weight files: fold0.pth, fold1.pth, …
-    fold_paths = sorted(glob.glob(os.path.join(WEIGHTS_DIR, "fold*.pth")))
-
-    if not fold_paths:
-        print(f"WARNING: No fold*.pth files found in '{WEIGHTS_DIR}'. /predict will return 503.")
-        return
-
-    print(f"Loading {len(fold_paths)} fold model(s) onto {DEVICE} ...")
-    for path in fold_paths:
-        print(f"  Loading {os.path.basename(path)} ...", flush=True)
-        fold_models.append(_load_single_fold(path, num_classes))
-
-    print(f"Ensemble ready: {len(fold_models)} fold(s) × {num_classes} classes.")
+def is_model_ready():
+    return bool(fold_models) and len(class_names) > 0
 
 
 # ── ENSEMBLE PREDICT ──────────────────────────────────────────────────────────

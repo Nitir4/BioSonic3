@@ -1,9 +1,17 @@
-from processing.audio_loader import load_audio
-from processing.chunking import split_chunks
-from processing.rai import calculate_rai
-from processing.zones import assign_zones, zone_counts, movement_pattern
-from model.predictor import predict, load_model
-from config import CHUNK_DURATION, CONF_THRESHOLD
+if __package__:
+    from .processing.audio_loader import load_audio
+    from .processing.chunking import split_chunks
+    from .processing.rai import calculate_rai
+    from .processing.zones import assign_zones, zone_counts, movement_pattern
+    from .model.predictor import predict, load_model
+    from .config import CHUNK_DURATION, CONF_THRESHOLD
+else:
+    from processing.audio_loader import load_audio
+    from processing.chunking import split_chunks
+    from processing.rai import calculate_rai
+    from processing.zones import assign_zones, zone_counts, movement_pattern
+    from model.predictor import predict, load_model
+    from config import CHUNK_DURATION, CONF_THRESHOLD
 
 
 def summarize_results(results):
